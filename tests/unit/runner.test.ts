@@ -95,4 +95,34 @@ describe("runCheck", () => {
       CanaryExecutionFailedError,
     );
   });
+
+  it("removes SIGINT and SIGTERM listeners after a successful runCheck", async () => {
+    const sigtermBefore = process.listenerCount("SIGTERM");
+    const sigintBefore = process.listenerCount("SIGINT");
+
+    process.env.MOCK_CANARY_SCENARIO = "pass";
+    await run();
+
+    const sigtermAfter = process.listenerCount("SIGTERM");
+    const sigintAfter = process.listenerCount("SIGINT");
+
+    expect(sigtermAfter).toBe(sigtermBefore);
+    expect(sigintAfter).toBe(sigintBefore);
+  });
+
+  it("removes SIGINT and SIGTERM listeners after a rejected runCheck", async () => {
+    const sigtermBefore = process.listenerCount("SIGTERM");
+    const sigintBefore = process.listenerCount("SIGINT");
+
+    process.env.MOCK_CANARY_SCENARIO = "internal-error";
+    await expect(run()).rejects.toThrow(
+      expect.any(CanaryExecutionFailedError),
+    );
+
+    const sigtermAfter = process.listenerCount("SIGTERM");
+    const sigintAfter = process.listenerCount("SIGINT");
+
+    expect(sigtermAfter).toBe(sigtermBefore);
+    expect(sigintAfter).toBe(sigintBefore);
+  });
 });
