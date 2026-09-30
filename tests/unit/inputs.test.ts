@@ -112,6 +112,11 @@ describe("getInputs", () => {
     expect(getInputs().network).toBe("testnet");
   });
 
+  it("trims surrounding whitespace from rpc-url", () => {
+    process.env["INPUT_RPC-URL"] = "  https://soroban-testnet.stellar.org  ";
+    expect(getInputs().rpcUrl).toBe("https://soroban-testnet.stellar.org");
+  });
+
   it("treats an all-whitespace network as unset", () => {
     process.env.INPUT_NETWORK = "   ";
     expect(getInputs().network).toBeUndefined();
@@ -189,5 +194,10 @@ describe("getInputs", () => {
   it("parses a valid timeout", () => {
     process.env["INPUT_TIMEOUT-MINUTES"] = "30";
     expect(getInputs().timeoutMinutes).toBe(30);
+  });
+
+  it("truncates a fractional timeout to an integer", () => {
+    process.env["INPUT_TIMEOUT-MINUTES"] = "15.9";
+    expect(getInputs().timeoutMinutes).toBe(15);
   });
 });
