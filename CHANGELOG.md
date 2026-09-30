@@ -66,6 +66,11 @@ All notable changes to this project are documented in this file.
 
 ### Testing
 
+- Added a `resolveVersion` test simulating a timed-out tags-page request
+  (a `"timeout"` event from the underlying `https.get` request), pinning
+  that the documented "never throws" contract holds for `fetchTagsPage`'s
+  timeout handler too: the run resolves with `commitSha: undefined` and
+  falls back to tag pinning ([#263]).
 - Added a `renderSummaryMarkdown` test pinning that a report whose
   `skipped` field is present but empty (`skipped: []`) renders no
   skipped-fixtures section, closing out the three-way
