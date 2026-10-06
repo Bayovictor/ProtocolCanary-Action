@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type * as canaryModule from "../../src/canary";
 import { SummaryPublishFailedError } from "../../src/errors";
 import type { ActionInputs } from "../../src/inputs";
 import type * as inputsModule from "../../src/inputs";
@@ -57,12 +58,16 @@ vi.mock("../../src/inputs", async (importOriginal) => {
   return { ...actual, getInputs: getInputsMock };
 });
 
-// Replacing the whole module (rather than spreading the actual one) keeps the
-// real install chain — cache, exec, https — out of these tests entirely: the
-// branches under test all run *after* installation has succeeded.
-vi.mock("../../src/canary", () => ({
-  ensureCanaryInstalled: ensureCanaryInstalledMock,
-}));
+// Only `ensureCanaryInstalled` — the entry point that reaches the cache,
+// `cargo`, and the network — is replaced, so the real install chain stays out
+// of these tests entirely: the branches under test all run *after*
+// installation has succeeded. Everything else is re-exported from the real
+// module, notably the pure `cargoInstallTimeoutMs` that `run()` derives from
+// the inputs (issue #65).
+vi.mock("../../src/canary", async (importOriginal) => {
+  const actual = await importOriginal<typeof canaryModule>();
+  return { ...actual, ensureCanaryInstalled: ensureCanaryInstalledMock };
+});
 
 vi.mock("../../src/runner", async (importOriginal) => {
   const actual = await importOriginal<typeof runnerModule>();
@@ -147,6 +152,19 @@ describe("run", () => {
 
     expect(runCheckMock).toHaveBeenCalledTimes(1);
     expect(runCheckMock).toHaveBeenCalledWith(BINARY_PATH, expect.arrayContaining(["check", "--format", "json"]), 60_000);
+  });
+
+  // #65: run() derives the install bound from timeout-minutes and hands it to
+  // ensureCanaryInstalled, so a hung `cargo install` is terminated by this
+  // Action's own timeout path instead of blocking until GitHub's job-level
+  // timeout. Here timeoutMinutes is 1, which is also the install floor.
+  it("passes the timeout-minutes-derived install bound to ensureCanaryInstalled", async () => {
+    runCheckMock.mockResolvedValueOnce({ exitCode: 0, signal: null, stdout: JSON.stringify(PASS_REPORT), stderr: "" });
+
+    await run();
+
+    expect(ensureCanaryInstalledMock).toHaveBeenCalledTimes(1);
+    expect(ensureCanaryInstalledMock).toHaveBeenCalledWith(expect.anything(), 60_000);
   });
 
   // #271, branch 1: a child killed by a signal closes with a null exit code,
