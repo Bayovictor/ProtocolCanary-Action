@@ -93,10 +93,77 @@ function deriveCounts(results: readonly CanaryResult[], skipped: readonly Canary
   return counts;
 }
 
+/** The documented `results[].status` enum. */
+const RESULT_STATUSES: readonly string[] = ["pass", "warning", "fail", "error", "skipped"];
+
+/** The documented `results[].surface` enum. */
+const RESULT_SURFACES: readonly string[] = ["xdr", "rpc", "soroban"];
+
+/**
+ * Returns why `value` is not a documented `results[]` entry, or
+ * `undefined` when it is. Returns the reason (instead of a bare boolean)
+ * so {@link InvalidReportError} can name the offending field and index
+ * up front, rather than the malformed entry surfacing later as an
+ * `undefined` inside `emitAnnotations`/`renderSummaryMarkdown`.
+ */
+function describeResultProblem(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return "is not an object";
+  }
+  const candidate = value as Partial<CanaryResult>;
+  if (typeof candidate.testId !== "string") {
+    return "\"testId\" must be a string";
+  }
+  if (typeof candidate.protocol !== "number") {
+    return "\"protocol\" must be a number";
+  }
+  if (typeof candidate.surface !== "string" || !RESULT_SURFACES.includes(candidate.surface)) {
+    return `"surface" must be one of ${RESULT_SURFACES.join(", ")}`;
+  }
+  if (typeof candidate.status !== "string" || !RESULT_STATUSES.includes(candidate.status)) {
+    return `"status" must be one of ${RESULT_STATUSES.join(", ")}`;
+  }
+  if (typeof candidate.summary !== "string") {
+    return "\"summary\" must be a string";
+  }
+  if (typeof candidate.durationMs !== "number") {
+    return "\"durationMs\" must be a number";
+  }
+  if (candidate.fixtureId !== null && typeof candidate.fixtureId !== "string") {
+    return "\"fixtureId\" must be a string or null";
+  }
+  if (candidate.details !== undefined && typeof candidate.details !== "string") {
+    return "\"details\" must be a string when present";
+  }
+  return undefined;
+}
+
+/**
+ * Returns why `value` is not a documented `skipped[]` entry, or
+ * `undefined` when it is. Same contract as {@link describeResultProblem}.
+ */
+function describeSkipProblem(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return "is not an object";
+  }
+  const candidate = value as Partial<CanarySkip>;
+  if (typeof candidate.fixtureId !== "string") {
+    return "\"fixtureId\" must be a string";
+  }
+  if (typeof candidate.surface !== "string") {
+    return "\"surface\" must be a string";
+  }
+  if (typeof candidate.reason !== "string") {
+    return "\"reason\" must be a string";
+  }
+  return undefined;
+}
+
 /**
  * Parses Canary's stdout as a report matching the documented schema.
  * Throws {@link InvalidReportError} if the text is not JSON, is not
- * shaped like a report, or declares an unsupported `schemaVersion`.
+ * shaped like a report, declares an unsupported `schemaVersion`, or
+ * contains a malformed `results[]`/`skipped[]` entry.
  */
 export function parseReport(stdout: string): CanaryReport {
   const trimmed = stdout.trim();
@@ -137,7 +204,27 @@ export function parseReport(stdout: string): CanaryReport {
   }
 
   const results = report.results as CanaryResult[];
-  const skipped = report.skipped as CanarySkip[] | undefined;
+  results.forEach((result, index) => {
+    const problem = describeResultProblem(result);
+    if (problem !== undefined) {
+      throw new InvalidReportError(`Canary's JSON output has a malformed results[${String(index)}]: ${problem}.`);
+    }
+  });
+
+  let skipped: CanarySkip[] | undefined;
+  if (report.skipped !== undefined) {
+    if (!Array.isArray(report.skipped)) {
+      throw new InvalidReportError("Canary's JSON output has a malformed \"skipped\" field: it must be an array.");
+    }
+    skipped = report.skipped as CanarySkip[];
+    skipped.forEach((entry, index) => {
+      const problem = describeSkipProblem(entry);
+      if (problem !== undefined) {
+        throw new InvalidReportError(`Canary's JSON output has a malformed skipped[${String(index)}]: ${problem}.`);
+      }
+    });
+  }
+
   const counts = isCountsShape(report.counts) ? report.counts : deriveCounts(results, skipped);
 
   return { ...report, results, skipped, counts } as CanaryReport;

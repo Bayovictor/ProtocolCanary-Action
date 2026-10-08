@@ -106,6 +106,82 @@ describe("parseReport", () => {
     const parsed = parseReport(JSON.stringify(report));
     expect(parsed.counts).toEqual({ total: 1, passed: 1, failed: 0, warnings: 0, errors: 0, skipped: 0 });
   });
+
+  const wellFormedResult = {
+    testId: "p28-xdr-cap83-empty-tx-set",
+    protocol: 28,
+    surface: "xdr",
+    status: "pass",
+    summary: "StellarValue round-tripped byte-for-byte",
+    durationMs: 1,
+    fixtureId: "p28-xdr-cap83-empty-tx-set",
+  };
+
+  it("rejects a report whose results contain an entry missing a required field", () => {
+    const { summary: _summary, ...withoutSummary } = wellFormedResult;
+    const report = { ...JSON.parse(VALID_REPORT), results: [withoutSummary] };
+    const parse = (): unknown => parseReport(JSON.stringify(report));
+    expect(parse).toThrow(InvalidReportError);
+    expect(parse).toThrow(/results\[0\]/);
+    expect(parse).toThrow(/summary/);
+  });
+
+  it("rejects a result whose status is outside the documented enum", () => {
+    const report = {
+      ...JSON.parse(VALID_REPORT),
+      results: [{ ...wellFormedResult, status: "timed-out" }],
+    };
+    expect(() => parseReport(JSON.stringify(report))).toThrow(InvalidReportError);
+    expect(() => parseReport(JSON.stringify(report))).toThrow(/results\[0\].*status/);
+  });
+
+  it("rejects a result whose surface is outside the documented enum", () => {
+    const report = {
+      ...JSON.parse(VALID_REPORT),
+      results: [{ ...wellFormedResult, surface: "horizon" }],
+    };
+    expect(() => parseReport(JSON.stringify(report))).toThrow(InvalidReportError);
+    expect(() => parseReport(JSON.stringify(report))).toThrow(/results\[0\].*surface/);
+  });
+
+  it("rejects a non-object entry inside results", () => {
+    const report = { ...JSON.parse(VALID_REPORT), results: ["not-an-object"] };
+    expect(() => parseReport(JSON.stringify(report))).toThrow(InvalidReportError);
+    expect(() => parseReport(JSON.stringify(report))).toThrow(/results\[0\]/);
+  });
+
+  it("names the offending index when a later result is the malformed one", () => {
+    const { durationMs: _durationMs, ...withoutDuration } = wellFormedResult;
+    const report = {
+      ...JSON.parse(VALID_REPORT),
+      results: [wellFormedResult, { ...withoutDuration, testId: "p28-rpc-get-network" }],
+    };
+    expect(() => parseReport(JSON.stringify(report))).toThrow(InvalidReportError);
+    expect(() => parseReport(JSON.stringify(report))).toThrow(/results\[1\].*durationMs/);
+  });
+
+  it("accepts a well-formed result whose fixtureId is null and has no details", () => {
+    const report = {
+      ...JSON.parse(VALID_REPORT),
+      results: [{ ...wellFormedResult, fixtureId: null }],
+    };
+    expect(() => parseReport(JSON.stringify(report))).not.toThrow();
+  });
+
+  it("rejects a report whose skipped contains a malformed entry", () => {
+    const report = {
+      ...JSON.parse(VALID_REPORT),
+      skipped: [{ fixtureId: "p27-xdr-legacy", surface: "xdr" }],
+    };
+    expect(() => parseReport(JSON.stringify(report))).toThrow(InvalidReportError);
+    expect(() => parseReport(JSON.stringify(report))).toThrow(/skipped\[0\].*reason/);
+  });
+
+  it("rejects a non-array skipped field", () => {
+    const report = { ...JSON.parse(VALID_REPORT), skipped: { fixtureId: "p27-xdr-legacy" } };
+    expect(() => parseReport(JSON.stringify(report))).toThrow(InvalidReportError);
+    expect(() => parseReport(JSON.stringify(report))).toThrow(/skipped/);
+  });
 });
 
 describe("describeExitCode", () => {
