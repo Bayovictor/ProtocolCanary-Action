@@ -86,7 +86,7 @@ vi.mock("../../src/summary", async (importOriginal) => {
   };
 });
 
-import { run } from "../../src/main";
+import { reportFilePath, run } from "../../src/main";
 
 const BINARY_PATH = path.join("/fake-cargo-home", "bin", "stellar-canary");
 
@@ -227,5 +227,43 @@ describe("run", () => {
     expect(writeSummaryMock).toHaveBeenCalledTimes(1);
     expect(errorMock).not.toHaveBeenCalled();
     expect(warningMock).not.toHaveBeenCalled();
+  });
+});
+
+// #251: reportFilePath decides where every downstream step looks for the
+// JSON report (parse, `report` output, artifact upload), so both of its
+// branches are pinned directly: the RUNNER_TEMP anchor a runner provides,
+// and the OS temp directory fallback when it does not.
+describe("reportFilePath", () => {
+  let savedRunnerTemp: string | undefined;
+  let runnerTemp: string;
+
+  beforeEach(() => {
+    savedRunnerTemp = process.env.RUNNER_TEMP;
+    runnerTemp = fs.mkdtempSync(path.join(os.tmpdir(), "canary-report-path-"));
+  });
+
+  afterEach(() => {
+    fs.rmSync(runnerTemp, { recursive: true, force: true });
+    if (savedRunnerTemp === undefined) {
+      delete process.env.RUNNER_TEMP;
+    } else {
+      process.env.RUNNER_TEMP = savedRunnerTemp;
+    }
+  });
+
+  it("resolves the report under RUNNER_TEMP when the runner provides one", () => {
+    process.env.RUNNER_TEMP = runnerTemp;
+
+    const reportPath = reportFilePath();
+
+    expect(path.dirname(reportPath)).toBe(runnerTemp);
+    expect(path.basename(reportPath)).toBe("stellar-canary-report.json");
+  });
+
+  it("falls back to os.tmpdir() when RUNNER_TEMP is unset", () => {
+    delete process.env.RUNNER_TEMP;
+
+    expect(reportFilePath()).toBe(path.join(os.tmpdir(), "stellar-canary-report.json"));
   });
 });
