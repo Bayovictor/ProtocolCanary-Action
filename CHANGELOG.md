@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- `parseReport` now validates every `results[]` (and `skipped[]`) entry
+  against the documented per-entry shape — required fields, the
+  `status`/`surface` enums — and throws `InvalidReportError` naming the
+  offending index and field. Previously a malformed entry was cast
+  through unchecked and only failed later, unclearly, inside annotation
+  and summary rendering.
+
 ## [0.1.1]
 
 ### Changed
