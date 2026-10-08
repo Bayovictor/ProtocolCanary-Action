@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   ConfigNotFoundError,
+  TimeoutError,
+  CanaryExecutionFailedError,
+  InvalidReportError,
   InvalidInputError,
   describeError,
   isCanaryActionError,
@@ -16,6 +19,18 @@ describe("CanaryActionError hierarchy", () => {
     const error = new ConfigNotFoundError(".stellar-canary.toml");
     expect(error.message).toBe("Configuration file not found: .stellar-canary.toml");
     expect(error.code).toBe("ConfigNotFound");
+  });
+
+  it("sets the TimeoutError code", () => {
+    expect(new TimeoutError("boom").code).toBe("Timeout");
+  });
+
+  it("sets the CanaryExecutionFailedError code", () => {
+    expect(new CanaryExecutionFailedError("boom").code).toBe("CanaryExecutionFailed");
+  });
+
+  it("sets the InvalidReportError code", () => {
+    expect(new InvalidReportError("boom").code).toBe("InvalidReport");
   });
 
   it("isCanaryActionError distinguishes typed errors from arbitrary errors", () => {
@@ -34,11 +49,42 @@ describe("describeError", () => {
     expect(describeError("plain string")).toBe("plain string");
   });
 
-  it("stringifies a thrown plain object as [object Object]", () => {
+  it("stringifies a thrown plain object as its JSON representation", () => {
     // Third-party dependencies sometimes reject with bare objects. The
-    // fallback branch reduces such values to JavaScript's default object
-    // stringification, which is unhelpful but must not throw or crash.
-    expect(describeError({ code: 500, details: "boom" })).toBe("[object Object]");
+    // fallback branch serializes them as JSON so the message actually
+    // conveys what was thrown instead of the useless "[object Object]".
+    expect(describeError({ code: 500, details: "boom" })).toBe(
+      '{"code":500,"details":"boom"}',
+    );
+  });
+
+  it("stringifies a thrown array as its JSON representation", () => {
+    // Arrays inherit Object.prototype's toString, so they would degrade to
+    // "[object Object]" too; JSON keeps their contents visible.
+    expect(describeError(["alpha", 2, false])).toBe('["alpha",2,false]');
+  });
+
+  it("falls back to default stringification for circular structures", () => {
+    // Circular references make JSON.stringify throw; the fallback must not
+    // throw either and degrades to the historical "[object Object]" output.
+    const circular: { self?: unknown } = {};
+    circular.self = circular;
+    expect(describeError(circular)).toBe("[object Object]");
+  });
+
+  it("falls back to default stringification when toJSON returns undefined", () => {
+    // JSON.stringify(undefined) is undefined, so such objects cannot be
+    // serialized and must take the String() fallback instead of collapsing
+    // to the literal string "undefined".
+    const unserializable = { toJSON: () => undefined };
+    expect(describeError(unserializable)).toBe("[object Object]");
+  });
+
+  it("falls back to default stringification when toJSON throws", () => {
+    // A hostile or buggy toJSON must not escape describeError as a new
+    // exception; it is treated like any other unserializable object.
+    const hostile = { toJSON: () => { throw new Error("toJSON exploded"); } };
+    expect(describeError(hostile)).toBe("[object Object]");
   });
 
   it("stringifies a thrown number as its decimal literal", () => {
