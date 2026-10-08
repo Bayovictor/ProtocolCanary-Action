@@ -14,7 +14,13 @@ import { buildCheckArgs, runCheck } from "./runner";
 import { renderExecutionFailureMarkdown, renderSummaryMarkdown, writeSummary } from "./summary";
 import { resolveVersion } from "./version";
 
-function reportFilePath(): string {
+/**
+ * Where one run writes its JSON report: parsed by `parseReport`, advertised
+ * through the `report` output, and uploaded as an artifact. Anchored on
+ * `RUNNER_TEMP` (private to the job on GitHub-hosted runners), falling back
+ * to the OS temp directory when it is unset.
+ */
+export function reportFilePath(): string {
   const dir = process.env.RUNNER_TEMP ?? os.tmpdir();
   return path.join(dir, "stellar-canary-report.json");
 }
