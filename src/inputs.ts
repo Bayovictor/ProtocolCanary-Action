@@ -4,15 +4,51 @@ import * as path from "node:path";
 
 import { ConfigNotFoundError, InvalidInputError } from "./errors";
 
+/**
+ * The Action's validated input set: the one typed contract that
+ * `canary.ts`, `runner.ts`, and `main.ts` consume, so no downstream module
+ * ever calls `core.getInput` itself or re-validates a raw string.
+ *
+ * Produced by {@link getInputs}, which validates every value before it is
+ * stored, so a field is never an unparsed input here. Two shapes:
+ *
+ * - **Optional** (`undefined` when the input is unset or blank): `protocol`,
+ *   `config`, `network`, `rpcUrl` — each forwarded to the CLI only when
+ *   present, leaving the default to Canary itself.
+ * - **Always present** (a default is applied when the input is empty):
+ *   `fixturesDir`, `version`, `uploadReport`, `annotations`,
+ *   `timeoutMinutes` — these are never `undefined`.
+ */
 export interface ActionInputs {
+  /** Target protocol to check against, e.g. `28`. Undefined when unset:
+   * the CLI then falls back to the config file's `protocol`, else 28. */
   readonly protocol: number | undefined;
+  /** Absolute path to an existing regular `.stellar-canary.toml`, resolved
+   * against the working directory. Undefined when unset, in which case the
+   * CLI looks for the file itself. */
   readonly config: string | undefined;
+  /** Stellar network for live RPC/Soroban checks (`testnet`, `mainnet`,
+   * `futurenet`, …), forwarded as `--network`. Undefined when unset. */
   readonly network: string | undefined;
+  /** Stellar RPC endpoint for live checks, forwarded as `--rpc-url`:
+   * an `https://` URL (plain `http://` only for `localhost`/`127.0.0.1`).
+   * Undefined when unset. */
   readonly rpcUrl: string | undefined;
+  /** Fixture directory forwarded as `--fixtures-dir`. Defaults to
+   * `fixtures`, matching the CLI's own default. */
   readonly fixturesDir: string;
+  /** Protocol-Canary version to install and run, without a leading `v`.
+   * Defaults to the version this Action pins. */
   readonly version: string;
+  /** Whether to upload the JSON report as a workflow artifact. Defaults to
+   * `true`; an upload failure never changes the compatibility result. */
   readonly uploadReport: boolean;
+  /** Whether to emit GitHub annotations for warning/fail/error results.
+   * Defaults to `true`. */
   readonly annotations: boolean;
+  /** Whole-minute bound on installing Canary and running the check,
+   * applied to both the `cargo install` and the Canary process. Defaults
+   * to `15`. */
   readonly timeoutMinutes: number;
 }
 
